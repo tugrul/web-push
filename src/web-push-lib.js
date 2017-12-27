@@ -8,6 +8,11 @@ const WebPushError = require('./web-push-error.js');
 const vapidHelper = require('./vapid-helper.js');
 const encryptionHelper = require('./encryption-helper.js');
 
+const gcmEndpoints = [
+    'https://android.googleapis.com/gcm/send',
+    'https://gcm-http.googleapis.com/gcm/send'
+];
+
 // Default TTL is four weeks.
 const DEFAULT_TTL = 2419200;
 
@@ -66,6 +71,21 @@ WebPushLib.prototype.setVapidDetails =
     };
   };
 
+WebPushLib.prototype.generateGCMRequestDetails =
+  function(subscription, payload, options) {
+
+      let currentGCMAPIKey = options.gcmAPIKey || gcmAPIKey;
+
+      if (!currentGCMAPIKey) {
+        console.warn('Attempt to send push notification to GCM endpoint, ' +
+          'but no GCM key is defined. Please use setGCMApiKey() or add ' +
+          '\'gcmAPIKey\' as an option.');
+      } else {
+        requestDetails.headers.Authorization = 'key=' + currentGCMAPIKey;
+      }
+
+  };
+
   /**
    * To get the details of a request to trigger a push message, without sending
    * a push notification call this method.
@@ -94,6 +114,17 @@ WebPushLib.prototype.generateRequestDetails =
         'a valid URL.');
     }
 
+    const gcmEndpoint = gcmEndpoints.find(function(endpoint){
+        return subscription.endpoint.indexOf(endpoint) === 0;
+    });
+
+    if (gcmEndpoint) {
+        subscription.registration_id =
+        subscription.endpoint.substr(gcmEndpoint.length + 1) || subscription.registration_id;
+        subscription.endpoint = gcmEndpoint;
+        return this.generateGCMRequestDetails(subscription, payload, options);
+    }
+
     if (payload) {
       // Validate the subscription keys
       if (!subscription.keys || !subscription.keys.p256dh ||
@@ -103,7 +134,7 @@ WebPushLib.prototype.generateRequestDetails =
       }
     }
 
-    let currentGCMAPIKey = gcmAPIKey;
+
     let currentVapidDetails = vapidDetails;
     let timeToLive = DEFAULT_TTL;
     let extraHeaders = {};
@@ -139,9 +170,7 @@ WebPushLib.prototype.generateRequestDetails =
         }
       }
 
-      if (options.gcmAPIKey) {
-        currentGCMAPIKey = options.gcmAPIKey;
-      }
+
 
       if (options.vapidDetails) {
         currentVapidDetails = options.vapidDetails;
@@ -193,13 +222,7 @@ WebPushLib.prototype.generateRequestDetails =
     const isGCM = subscription.endpoint.indexOf('https://android.googleapis.com/gcm/send') === 0;
     // VAPID isn't supported by GCM hence the if, else if.
     if (isGCM) {
-      if (!currentGCMAPIKey) {
-        console.warn('Attempt to send push notification to GCM endpoint, ' +
-          'but no GCM key is defined. Please use setGCMApiKey() or add ' +
-          '\'gcmAPIKey\' as an option.');
-      } else {
-        requestDetails.headers.Authorization = 'key=' + currentGCMAPIKey;
-      }
+
     } else if (currentVapidDetails) {
       const parsedUrl = url.parse(subscription.endpoint);
       const audience = parsedUrl.protocol + '//' +
