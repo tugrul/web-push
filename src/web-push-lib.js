@@ -16,11 +16,10 @@ const gcmEndpoints = [
 // Default TTL is four weeks.
 const DEFAULT_TTL = 2419200;
 
-let gcmAPIKey = '';
 let vapidDetails;
 
 function WebPushLib() {
-
+    this.gcmAPIKey = null;
 }
 
 /**
@@ -30,17 +29,16 @@ function WebPushLib() {
  * @param  {string} apiKey The API key to send with the GCM request.
  */
 WebPushLib.prototype.setGCMAPIKey = function(apiKey) {
-  if (apiKey === null) {
-    gcmAPIKey = null;
-    return;
-  }
 
-  if (typeof apiKey === 'undefined' || typeof apiKey !== 'string' ||
-    apiKey.length === 0) {
-    throw new Error('The GCM API Key should be a non-empty string or null.');
-  }
+    if (!apiKey && apiKey !== null) {
+        throw new Error('The GCM API Key should be a non-empty string or null.');
+    }
 
-  gcmAPIKey = apiKey;
+    this.gcmAPIKey = apiKey;
+};
+
+WebPushLib.prototype.getGCMAPIKey = function(fallback) {
+    return fallback || this.gcmAPIKey;
 };
 
 /**
@@ -74,15 +72,20 @@ WebPushLib.prototype.setVapidDetails =
 WebPushLib.prototype.generateGCMRequestDetails =
   function(subscription, payload, options) {
 
-      let currentGCMAPIKey = options.gcmAPIKey || gcmAPIKey;
+      const gcmApiKey = this.getGCMAPIKey(options.gcmAPIKey);
 
-      if (!currentGCMAPIKey) {
-        console.warn('Attempt to send push notification to GCM endpoint, ' +
-          'but no GCM key is defined. Please use setGCMApiKey() or add ' +
-          '\'gcmAPIKey\' as an option.');
-      } else {
-        requestDetails.headers.Authorization = 'key=' + currentGCMAPIKey;
+      if (!gcmApiKey) {
+        return null;
       }
+
+      const requestDetails = {
+        method: 'POST',
+        headers: {
+          TTL: timeToLive
+        }
+      };
+
+      requestDetails.headers.Authorization = 'key=' + gcmApiKey;
 
   };
 
@@ -215,15 +218,9 @@ WebPushLib.prototype.generateRequestDetails =
       requestDetails.headers['Crypto-Key'] = 'dh=' + urlBase64.encode(encrypted.localPublicKey);
 
       requestPayload = encrypted.cipherText;
-    } else {
-      requestDetails.headers['Content-Length'] = 0;
     }
 
-    const isGCM = subscription.endpoint.indexOf('https://android.googleapis.com/gcm/send') === 0;
-    // VAPID isn't supported by GCM hence the if, else if.
-    if (isGCM) {
-
-    } else if (currentVapidDetails) {
+    if (currentVapidDetails) {
       const parsedUrl = url.parse(subscription.endpoint);
       const audience = parsedUrl.protocol + '//' +
         parsedUrl.host;
